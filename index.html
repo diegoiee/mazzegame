@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>El Laberinto del Gatito</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#30363d;
+    --wall:#3a4150; --floor:#0d1117; --fog:#11151c;
+    --you:#58d6ff; --cat:#ff79c6; --exit:#7be08a; --trail:#2a3550;
+    --txt:#c9d1d9; --dim:#6e7681; --warn:#ffd166; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%;}
+  body{
+    background:radial-gradient(circle at 50% 0%, #11161f, var(--bg));
+    color:var(--txt); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100%; padding:14px; gap:12px; user-select:none;
+  }
+  h1{font-size:20px; margin:4px 0 0; letter-spacing:.5px; text-align:center;}
+  h1 .cat{color:var(--cat);}
+  #hud{
+    display:flex; gap:10px; flex-wrap:wrap; justify-content:center;
+    width:100%; max-width:560px;
+  }
+  .stat{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:6px 12px; font-size:13px; flex:1; text-align:center; min-width:70px;
+  }
+  .stat b{display:block; font-size:17px; margin-top:2px;}
+  #time.low b{color:var(--bad);}
+  #msg{
+    min-height:20px; text-align:center; font-size:14px; max-width:560px;
+    color:var(--warn); line-height:1.35;
+  }
+  #mazeWrap{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:12px; overflow:auto; max-width:100%;
+  }
+  #maze{
+    font-family:inherit; font-size:16px; line-height:1.0; white-space:pre;
+    letter-spacing:2px; margin:0;
+  }
+  #maze .w{color:var(--wall);}
+  #maze .y{color:var(--you); font-weight:bold; text-shadow:0 0 8px var(--you);}
+  #maze .c{color:var(--cat); font-weight:bold; text-shadow:0 0 8px var(--cat);}
+  #maze .e{color:var(--exit); font-weight:bold; text-shadow:0 0 6px var(--exit);}
+  #maze .t{color:var(--trail);}
+  #maze .f{color:var(--fog);}
+  #pad{
+    display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(2,64px);
+    gap:8px; justify-content:center; margin-top:4px;
+  }
+  .btn{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    color:var(--txt); font-size:26px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:transform .05s, background .1s; touch-action:manipulation;
+  }
+  .btn:active{transform:scale(.92); background:#1f2733; border-color:var(--you);}
+  #up{grid-column:2; grid-row:1;}
+  #left{grid-column:1; grid-row:2;}
+  #down{grid-column:2; grid-row:2;}
+  #right{grid-column:3; grid-row:2;}
+  #action{
+    margin-top:6px; padding:12px 22px; font-size:15px; font-family:inherit;
+    background:var(--cat); color:#0d1117; border:none; border-radius:12px;
+    font-weight:bold; cursor:pointer;
+  }
+  #action:active{transform:scale(.97);}
+  .legend{font-size:12px; color:var(--dim); text-align:center; max-width:560px;}
+  .legend b{color:var(--txt);}
+</style>
+</head>
+<body>
+  <h1>El Laberinto del <span class="cat">Gatito</span> 🐱</h1>
+
+  <div id="hud">
+    <div class="stat">Nivel<b id="level">1</b></div>
+    <div class="stat">Puntos<b id="score">0</b></div>
+    <div class="stat" id="time">Tiempo<b id="timeVal">--</b></div>
+    <div class="stat">Fase<b id="phase">Inicio</b></div>
+  </div>
+
+  <div id="msg"></div>
+
+  <div id="mazeWrap"><pre id="maze"></pre></div>
+
+  <div id="pad">
+    <div class="btn" id="up">▲</div>
+    <div class="btn" id="left">◀</div>
+    <div class="btn" id="down">▼</div>
+    <div class="btn" id="right">▶</div>
+  </div>
+
+  <button id="action">▶ Empezar</button>
+
+  <div class="legend">
+    <b style="color:var(--you)">@</b> vos &nbsp;·&nbsp;
+    <b style="color:var(--cat)">♥</b> gatito &nbsp;·&nbsp;
+    <b style="color:var(--exit)">▒</b> salida &nbsp;·&nbsp;
+    <b>#</b> pared<br>
+    <b>Ida:</b> ves todo, atrapá al gatito. &nbsp;
+    <b>Vuelta:</b> niebla + reloj, recordá el camino para salir.
+  </div>
+
+<script>
+(() => {
+  "use strict";
+  const N=1, E=2, S=4, W=8;
+  const DX={[N]:0,[E]:1,[S]:0,[W]:-1};
+  const DY={[N]:-1,[E]:0,[S]:1,[W]:0};
+  const OPP={[N]:S,[E]:W,[S]:N,[W]:E};
+
+  // ---------- estado ----------
+  let cols, rows, cells, px, py, cat, phase, level=1, score=0;
+  let timeLeft=0, timerId=null, revealRadius=1, visited;
+
+  const el = id => document.getElementById(id);
+  const maze = el('maze'), msg = el('msg');
+
+  // generador de laberinto perfecto (backtracker recursivo)
+  function genMaze(){
+    cells = Array.from({length:rows}, ()=>Array.from({length:cols}, ()=>({walls:N|E|S|W, seen:false})));
+    const stack=[]; let cx=0, cy=0; cells[0][0].vis=true;
+    let total=cols*rows, count=1;
+    while(count<total){
+      const dirs=[N,E,S,W].filter(d=>{
+        const nx=cx+DX[d], ny=cy+DY[d];
+        return nx>=0&&nx<cols&&ny>=0&&ny<rows&&!cells[ny][nx].vis;
+      });
+      if(dirs.length){
+        const d=dirs[Math.floor(Math.random()*dirs.length)];
+        const nx=cx+DX[d], ny=cy+DY[d];
+        cells[cy][cx].walls&=~d;
+        cells[ny][nx].walls&=~OPP[d];
+        cells[ny][nx].vis=true;
+        stack.push([cx,cy]); cx=nx; cy=ny; count++;
+      } else { [cx,cy]=stack.pop(); }
+    }
+  }
+
+  // BFS: distancia desde (sx,sy) a todas las celdas, devuelve celda más lejana y dist
+  function farthestFrom(sx,sy){
+    const dist=Array.from({length:rows},()=>Array(cols).fill(-1));
+    const q=[[sx,sy]]; dist[sy][sx]=0; let best=[sx,sy], bestD=0;
+    while(q.length){
+      const [x,y]=q.shift();
+      if(dist[y][x]>bestD){bestD=dist[y][x]; best=[x,y];}
+      for(const d of [N,E,S,W]){
+        if(cells[y][x].walls&d) continue;
+        const nx=x+DX[d], ny=y+DY[d];
+        if(nx<0||nx>=cols||ny<0||ny>=rows||dist[ny][nx]!==-1) continue;
+        dist[ny][nx]=dist[y][x]+1; q.push([nx,ny]);
+      }
+    }
+    return {cell:best, dist:bestD, distMap:dist};
+  }
+
+  // ---------- render ASCII ----------
+  function render(){
+    const H=rows*2+1, Wd=cols*2+1;
+    let out='';
+    for(let r=0;r<H;r++){
+      for(let c=0;c<Wd;c++){
+        out += charAt(r,c);
+      }
+      out += (r<H-1?'\n':'');
+    }
+    maze.innerHTML = out;
+  }
+
+  function cellVisible(x,y){
+    if(phase!=='vuelta') return true;
+    return Math.max(Math.abs(x-px), Math.abs(y-py)) <= revealRadius;
+  }
+
+  function span(ch,cls){return `<span class="${cls}">${ch}</span>`;}
+
+  function charAt(r,c){
+    const onR = r%2, onC = c%2;
+    // esquinas de pared
+    if(!onR && !onC) return span('#','w');
+    // celda
+    if(onR && onC){
+      const x=(c-1)/2, y=(r-1)/2;
+      if(!cellVisible(x,y)) return span(' ','f');
+      if(x===px && y===py) return span('@','y');
+      if(phase==='ida' && x===cat[0] && y===cat[1]) return span('♥','c');
+      if(x===0 && y===0) return span('▒','e'); // salida = entrada
+      if(visited && visited[y][x]) return span('·','t');
+      return ' ';
+    }
+    // pared horizontal (entre celdas verticales)
+    if(!onR && onC){
+      const x=(c-1)/2, y0=r/2-1, y1=r/2;
+      const owner = y0>=0?[x,y0,S]:[x,y1,N];
+      if(phase==='vuelta' && !cellVisible(x, y0>=0?y0:y1) && !cellVisible(x, y1<rows?y1:y0)) return span(' ','f');
+      const [ox,oy,od]=owner;
+      return (cells[oy][ox].walls&od)?span('#','w'):' ';
+    }
+    // pared vertical (entre celdas horizontales)
+    {
+      const y=(r-1)/2, x0=c/2-1, x1=c/2;
+      if(phase==='vuelta' && !cellVisible(x0>=0?x0:x1, y) && !cellVisible(x1<cols?x1:x0, y)) return span(' ','f');
+      const owner = x0>=0?[x0,y,E]:[x1,y,W];
+      const [ox,oy,od]=owner;
+      return (cells[oy][ox].walls&od)?span('#','w'):' ';
+    }
+  }
+
+  // ---------- flujo de juego ----------
+  function setMsg(t,color){ msg.textContent=t; msg.style.color=color||'var(--warn)'; }
+  function setPhase(p){ phase=p; el('phase').textContent={inicio:'Inicio',ida:'Ida',vuelta:'Vuelta',fin:'Fin'}[p]||p; }
+
+  function startLevel(){
+    cols = Math.min(6 + level, 16);
+    rows = Math.min(6 + level, 16);
+    revealRadius = level>=6 ? 1 : (level>=3 ? 1 : 2); // se va poniendo más difícil
+    genMaze();
+    visited = Array.from({length:rows},()=>Array(cols).fill(false));
+    px=0; py=0; visited[0][0]=true;
+    // gatito en la celda más lejana de la entrada
+    const far = farthestFrom(0,0);
+    cat = far.cell;
+    setPhase('ida');
+    el('level').textContent=level;
+    el('timeVal').textContent='--';
+    el('time').classList.remove('low');
+    setMsg('🐈 ¡Un gatito se metió al laberinto! Perseguilo y atrapalo. (memorizá el camino…)', 'var(--warn)');
+    el('action').style.display='none';
+    render();
+  }
+
+  function startReturn(){
+    setPhase('vuelta');
+    // tiempo según distancia real del gatito a la salida
+    const far = farthestFrom(px,py);
+    const distToExit = far.distMap[0][0];
+    const perStep = Math.max(1.1, 2.2 - level*0.08);
+    timeLeft = Math.ceil(distToExit * perStep) + 4;
+    el('timeVal').textContent = timeLeft;
+    setMsg('🐱 ¡Atrapaste al gatito! Ahora volvé a la salida ▒ de memoria, antes de que se acabe el tiempo.', 'var(--cat)');
+    // limpiar rastro para que sea desafío de memoria
+    visited = Array.from({length:rows},()=>Array(cols).fill(false));
+    visited[py][px]=true;
+    if(timerId) clearInterval(timerId);
+    timerId = setInterval(tick, 1000);
+    render();
+  }
+
+  function tick(){
+    timeLeft--;
+    el('timeVal').textContent = Math.max(0,timeLeft);
+    if(timeLeft<=5) el('time').classList.add('low');
+    if(timeLeft<=0){ lose('⏰ ¡Se acabó el tiempo! El gatito se asustó. 0 puntos este nivel.'); }
+  }
+
+  function lose(text){
+    clearInterval(timerId); timerId=null;
+    setPhase('fin');
+    setMsg(text + ' Tocá para reintentar el nivel.', 'var(--bad)');
+    el('action').textContent='↻ Reintentar nivel ' + level;
+    el('action').style.display='inline-block';
+    render();
+  }
+
+  function win(){
+    clearInterval(timerId); timerId=null;
+    const gained = timeLeft*10 + level*50;
+    score += gained;
+    el('score').textContent=score;
+    setPhase('fin');
+    setMsg(`🎉 ¡Saliste con el gatito! +${gained} puntos (${timeLeft}s de sobra). ¡Nivel ${level+1}!`, 'var(--exit)');
+    el('action').textContent='▶ Siguiente nivel ('+(level+1)+')';
+    el('action').style.display='inline-block';
+    level++;
+    render();
+  }
+
+  function move(dir){
+    if(phase!=='ida' && phase!=='vuelta') return;
+    if(cells[py][px].walls&dir) return; // pared
+    px+=DX[dir]; py+=DY[dir];
+    visited[py][px]=true;
+
+    if(phase==='ida' && px===cat[0] && py===cat[1]){
+      startReturn(); return;
+    }
+    if(phase==='vuelta' && px===0 && py===0){
+      win(); return;
+    }
+    render();
+  }
+
+  // ---------- controles ----------
+  const bind=(id,dir)=>{
+    const b=el(id);
+    const go=e=>{e.preventDefault(); move(dir);};
+    b.addEventListener('click', go);
+  };
+  bind('up',N); bind('down',S); bind('left',W); bind('right',E);
+
+  document.addEventListener('keydown', e=>{
+    const k=e.key;
+    if(k==='ArrowUp'||k==='w'||k==='W') move(N);
+    else if(k==='ArrowDown'||k==='s'||k==='S') move(S);
+    else if(k==='ArrowLeft'||k==='a'||k==='A') move(W);
+    else if(k==='ArrowRight'||k==='d'||k==='D') move(E);
+    else return;
+    e.preventDefault();
+  });
+
+  el('action').addEventListener('click', ()=>{ startLevel(); });
+
+  // pantalla inicial
+  cols=8; rows=8; genMaze();
+  visited=Array.from({length:rows},()=>Array(cols).fill(false));
+  px=0;py=0; phase='inicio'; cat=[cols-1,rows-1];
+  setMsg('Entrás a un laberinto siguiendo a un gatito 🐈. Atrapalo y volvé a la salida de memoria, contra reloj.','var(--txt)');
+  render();
+})();
+</script>
+</body>
+</html>
