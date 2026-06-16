@@ -44,6 +44,7 @@
     min-height:16px; text-align:center; font-size:12.5px; max-width:600px;
     color:var(--warn); line-height:1.3; flex:0 0 auto;
   }
+  body.hide-msg #msg{ display:none; }
   #mazeWrap{
     background:var(--panel); border:1px solid var(--line); border-radius:12px;
     width:100%; max-width:600px; flex:1 1 auto; min-height:0;
@@ -245,6 +246,7 @@
     el('phase').textContent={inicio:'Inicio',ida:'Ida',vuelta:'Vuelta',fin:'Fin'}[p]||p;
     document.body.classList.toggle('ended', p==='fin');
     document.body.classList.toggle('playing', p==='ida'||p==='vuelta');
+    document.body.classList.toggle('hide-msg', p==='ida');
   }
   function returnMsg(){
     const t=Math.max(0,timeLeft);
