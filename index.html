@@ -29,9 +29,10 @@
   h1{font-size:clamp(15px,4.4vw,20px); margin:0; letter-spacing:.5px; text-align:center; flex:0 0 auto;}
   h1 .cat{color:var(--cat);}
   #hud{
-    display:flex; gap:6px; justify-content:center;
+    display:none; gap:6px; justify-content:center;
     width:100%; max-width:600px; flex:0 0 auto;
   }
+  body.ended #hud{ display:flex; }
   .stat{
     background:var(--panel); border:1px solid var(--line); border-radius:10px;
     padding:4px 6px; font-size:11px; flex:1; text-align:center; min-width:0;
@@ -238,7 +239,15 @@
 
   // ---------- flujo de juego ----------
   function setMsg(t,color){ msg.textContent=t; msg.style.color=color||'var(--warn)'; }
-  function setPhase(p){ phase=p; el('phase').textContent={inicio:'Inicio',ida:'Ida',vuelta:'Vuelta',fin:'Fin'}[p]||p; }
+  function setPhase(p){
+    phase=p;
+    el('phase').textContent={inicio:'Inicio',ida:'Ida',vuelta:'Vuelta',fin:'Fin'}[p]||p;
+    document.body.classList.toggle('ended', p==='fin');
+  }
+  function returnMsg(){
+    const t=Math.max(0,timeLeft);
+    setMsg(`⏰ ${t}s · volvé a la salida ▒ de memoria con el gatito 🐱`, t<=5?'var(--bad)':'var(--cat)');
+  }
 
   function startLevel(){
     cols = Math.min(6 + level, 16);
@@ -267,7 +276,7 @@
     const perStep = Math.max(1.1, 2.2 - level*0.08);
     timeLeft = Math.ceil(distToExit * perStep) + 4;
     el('timeVal').textContent = timeLeft;
-    setMsg('🐱 ¡Atrapaste al gatito! Ahora volvé a la salida ▒ de memoria, antes de que se acabe el tiempo.', 'var(--cat)');
+    returnMsg();
     // limpiar rastro para que sea desafío de memoria
     visited = Array.from({length:rows},()=>Array(cols).fill(false));
     visited[py][px]=true;
@@ -280,7 +289,8 @@
     timeLeft--;
     el('timeVal').textContent = Math.max(0,timeLeft);
     if(timeLeft<=5) el('time').classList.add('low');
-    if(timeLeft<=0){ lose('⏰ ¡Se acabó el tiempo! El gatito se asustó. 0 puntos este nivel.'); }
+    if(timeLeft<=0){ lose('⏰ ¡Se acabó el tiempo! El gatito se asustó. 0 puntos este nivel.'); return; }
+    returnMsg();
   }
 
   function lose(text){
